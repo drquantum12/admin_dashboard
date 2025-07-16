@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Research Agent</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      background: #f1f5f9;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .left-panel, .right-panel {
+      padding: 20px;
+      box-sizing: border-box;
+      height: 100%;
+    }
+
+    .left-panel {
+      width: 30%;
+      background: #ffffff;
+      border-right: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .right-panel {
+      width: 70%;
+      background: #f9fafb;
+      display: flex;
+      flex-direction: column;
+    }
+
+    h2 {
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+    }
+
+    input[type="file"], textarea, input[type="text"] {
+      padding: 10px;
+      width: 100%;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin-right: 10px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      background-color: #4f46e5;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #4338ca;
+    }
+
+    #research-output {
+      white-space: pre-wrap;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      flex-grow: 1;
+      overflow-y: auto;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      font-family: monospace;
+    }
+
+    .floating-nav {
+      position: fixed;
+      top: 10px;
+      right: 20px;
+      background-color: rgba(255, 255, 255, 0.9);
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      z-index: 1000;
+      display: flex;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .floating-nav a {
+      text-decoration: none;
+      color: #4f46e5;
+      transition: color 0.2s;
+    }
+
+    .floating-nav a:hover {
+      color: #4338ca;
+    }
+
+    #research-output h1, #research-output h2, #research-output h3 {
+  font-weight: bold;
+  color: #1e293b;
+}
+
+#research-output p {
+  margin-bottom: 1em;
+}
+
+#research-output pre {
+  background: #f1f5f9;
+  padding: 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+#research-output code {
+  background: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+  </style>
+</head>
+<body>
+  <div class="floating-nav">
+    <a href="/">🏠 Home</a>
+    <a href="/preprocess">📝 Preprocess</a>
+    <a href="/settings">⚙️ Settings</a>
+    <a href="/research">🔬 Research</a>
+  </div>
+
+  <div class="left-panel">
+    <h2>🔍 Research Panel</h2>
+    <input type="file" id="pdfFile" accept="application/pdf" />
+    <input type="text" id="objective" placeholder="Enter research objective..." />
+    <div><strong id="page-count">📄 Pages: 0</strong></div>
+    <button onclick="processResearch()">🚀 Process</button>
+    <button onclick="clearResearch()">🧹 Clear</button>
+    <button onclick="saveResearch()">💾 Save Response</button>
+    <button onclick="saveResearchAsText()">💾 Save as Text</button>
+  </div>
+
+  <div class="right-panel">
+    <h2>🧠 Research Output</h2>
+    <div id="research-output">Waiting to start...</div>
+  </div>
+
+  <script>
+    let researchText = "";
+    let researchBlob = null;
+
+   async function processResearch() {
+  const fileInput = document.getElementById("pdfFile");
+  const objective = document.getElementById("objective").value.trim();
+  const output = document.getElementById("research-output");
+
+  if (!fileInput.files[0]) {
+    alert("Please upload a PDF file.");
+    return;
+  }
+
+  if (!objective) {
+    alert("Please enter a research objective.");
+    return;
+  }
+
+  output.innerHTML = "<em>⏳ Processing PDF...</em>";
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+  formData.append("objective", objective);
+
+  const response = await fetch("/research/process-research", {
+    method: "POST",
+    body: formData
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let fullText = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value);
+    fullText += chunk;
+    output.innerHTML = marked.parse(fullText);
+    output.scrollTop = output.scrollHeight;
+  }
+
+  researchText = fullText;
+}
+    function clearResearch() {
+      document.getElementById("research-output").innerHTML = "Waiting to start...";
+      researchText = "";
+    }
+
+    async function saveResearch() {
+  const outputDiv = document.getElementById("research-output");
+
+  if (!researchText || !outputDiv.innerHTML.trim()) {
+    alert("No research output to save.");
+    return;
+  }
+
+  const filename = prompt("Enter filename to save (without extension):", "research_summary");
+  if (!filename) return;
+
+  // Clone the content
+  const clone = outputDiv.cloneNode(true);
+  clone.style.width = "800px";
+  clone.style.overflow = "visible";
+  clone.style.whiteSpace = "normal";
+  clone.style.maxWidth = "100%";
+  clone.style.wordBreak = "break-word";
+  clone.style.boxSizing = "border-box";
+
+  // Unset height/overflow for all children
+  clone.querySelectorAll("*").forEach(el => {
+    el.style.overflow = "visible";
+    el.style.height = "auto";
+    el.style.maxHeight = "none";
+  });
+
+  // Wrap in container
+  const container = document.createElement("div");
+  container.style.width = "800px";
+  container.style.padding = "20px";
+  container.appendChild(clone);
+
+  const opt = {
+    margin: 0.5,
+    filename: `${filename}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] }
+  };
+
+  html2pdf().from(container).set(opt).save();
+}
+
+async function saveResearchAsText() {
+      if (!researchText) {
+        alert("No research output to save.");
+        return;
+      }
+
+      const filename = prompt("Enter filename to save (without extension):", "research_summary");
+      if (!filename) return;
+
+      const blob = new Blob([researchText], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${filename}.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</body>
+</html>

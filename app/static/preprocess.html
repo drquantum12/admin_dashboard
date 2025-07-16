@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF Processor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      background: #f1f5f9;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .left-panel, .right-panel {
+      padding: 20px;
+      box-sizing: border-box;
+      height: 100%;
+    }
+
+    .left-panel {
+      width: 40%;
+      background: #ffffff;
+      border-right: 1px solid #e2e8f0;
+      overflow-y: auto;
+    }
+
+    .right-panel {
+      width: 60%;
+      background: #f9fafb;
+      display: flex;
+      flex-direction: column;
+    }
+
+    h2 {
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+    }
+
+    .section {
+      margin-bottom: 30px;
+    }
+
+    .folder {
+      margin-left: 10px;
+    }
+
+    details > summary {
+      cursor: pointer;
+      font-weight: 600;
+      margin: 6px 0;
+    }
+
+    label {
+      display: block;
+      margin-left: 25px;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin-right: 10px;
+      margin-top: 10px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      background-color: #4f46e5;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #4338ca;
+    }
+
+    #streamed-output {
+      white-space: pre-wrap;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      flex-grow: 1;
+      overflow-y: auto;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      font-family: monospace;
+    }
+
+    #upload-progress {
+      width: 100%;
+      margin-top: 8px;
+      height: 10px;
+      background: #e5e7eb;
+      border-radius: 6px;
+      overflow: hidden;
+      display: none;
+    }
+
+    #upload-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: #4ade80;
+    }
+
+    .right-controls {
+      display: flex;
+      /* justify-content: space-between; */
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .floating-nav {
+  position: fixed;
+  top: 10px;
+  right: 20px;
+  background-color: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  z-index: 1000;
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.floating-nav a {
+  text-decoration: none;
+  color: #4f46e5;
+  transition: color 0.2s;
+}
+
+.floating-nav a:hover {
+  color: #4338ca;
+}
+  </style>
+</head>
+<body>
+  <div class="floating-nav">
+    <a href="/">🏠 Home</a>
+    <a href="/preprocess">📝 Preprocess</a>
+    <a href="/settings">⚙️ Settings</a>
+    <a href="/research">🔬 Research</a>
+  </div>
+  <div class="left-panel">
+    <div class="section">
+      <h2>📂 A: Unprocessed PDFs</h2>
+      <div class="pdf-list" id="unprocessedTree">
+        Loading...
+      </div>
+    </div>
+    <div class="section">
+      <h2>✅ B: Processed Markdown Files</h2>
+      <div class="md-list" id="processedList">
+        Loading...
+      </div>
+    </div>
+  </div>
+
+  <div class="right-panel">
+    <div class="section">
+  <label for="promptSelector"><strong>📘 Choose Prompt (Subject):</strong></label>
+  <select id="promptSelector" style="padding: 6px; width: 100%; border-radius: 6px; border: 1px solid #ccc;"></select>
+</div>
+    <div class="right-controls">
+      <h2>🧠 LLM Output (Markdown View)</h2>
+      <button onclick="clearOutput()" style="margin-left: 20px;">🧹 Clear</button>
+    </div>
+    <div id="streamed-output">Waiting to process...</div>
+     <div class="section">
+      <button onclick="processSelected()">Process</button>
+      <button onclick="uploadMarkdown()">Upload</button>
+      <div id="upload-progress">
+        <div id="upload-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let selectedFile = "";
+    let streamedMarkdown = "";
+    let selectedPromptId = "";
+
+    async function loadPrompts() {
+  const res = await fetch("/preprocess/list-prompts");
+  const prompts = await res.json();
+
+  const promptSelect = document.getElementById("promptSelector");
+  promptSelect.innerHTML = "";
+  prompts.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.innerText = p.subject;
+    promptSelect.appendChild(opt);
+  });
+
+  // Set default
+  if (prompts.length > 0) {
+    selectedPromptId = prompts[0].id;
+  }
+
+  promptSelect.onchange = () => {
+    selectedPromptId = promptSelect.value;
+  };
+}
+
+    function buildTree(paths) {
+      const root = {};
+      for (const fullPath of paths) {
+        const parts = fullPath.replace(/^raw data\/|^processed data\//, "").split("/");
+        let node = root;
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (!node[part]) {
+            node[part] = i === parts.length - 1 ? fullPath : {};
+          }
+          node = node[part];
+        }
+      }
+      return root;
+    }
+
+    function renderTree(node, parent, isProcessed = false) {
+      for (const key in node) {
+        const value = node[key];
+        if (typeof value === "string") {
+          const label = document.createElement("label");
+          if (!isProcessed) {
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.name = "pdf_checkbox";
+            checkbox.value = value;
+            checkbox.onchange = () => selectedFile = value;
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(" " + key));
+          } else {
+            label.innerText = key;
+          }
+          parent.appendChild(label);
+        } else {
+          const details = document.createElement("details");
+          const summary = document.createElement("summary");
+          summary.innerText = key;
+          details.appendChild(summary);
+          const folderDiv = document.createElement("div");
+          folderDiv.classList.add("folder");
+          renderTree(value, folderDiv, isProcessed);
+          details.appendChild(folderDiv);
+          parent.appendChild(details);
+        }
+      }
+    }
+
+    async function loadFiles() {
+      const res = await fetch('/preprocess/list-files');
+      const data = await res.json();
+
+      const treeContainer = document.getElementById("unprocessedTree");
+      treeContainer.innerHTML = "";
+      const fileTree = buildTree(data.unprocessed_pdfs);
+      renderTree(fileTree, treeContainer);
+
+      const processedTree = document.getElementById("processedList");
+      processedTree.innerHTML = "";
+      const processedStructure = buildTree(data.processed_mds);
+      renderTree(processedStructure, processedTree, true);
+    }
+
+    async function processSelected() {
+      const selected = [...document.querySelectorAll("input[name='pdf_checkbox']:checked")];
+      if (selected.length !== 1) {
+        alert("Select exactly one PDF to process.");
+        return;
+      }
+
+      const pdfPath = selected[0].value;
+      const outputDiv = document.getElementById("streamed-output");
+      outputDiv.innerText = "⏳ Processing...";
+      streamedMarkdown = "";
+
+      const response = await fetch('/preprocess/process-pdf-stream', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+    pdf_path: pdfPath,
+    prompt_id: selectedPromptId
+  })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+
+      let fullText = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        fullText += chunk;
+        outputDiv.innerText = fullText;
+        outputDiv.scrollTop = outputDiv.scrollHeight;  // auto-scroll
+      }
+
+      streamedMarkdown = fullText;
+    }
+
+    async function uploadMarkdown() {
+      if (!streamedMarkdown || !selectedFile) {
+        alert("Process a file first before uploading.");
+        return;
+      }
+
+      const progressBar = document.getElementById("upload-progress-bar");
+      const progressContainer = document.getElementById("upload-progress");
+      progressContainer.style.display = "block";
+      progressBar.style.width = "0%";
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/preprocess/upload-md", true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+
+      xhr.upload.onprogress = function (event) {
+        if (event.lengthComputable) {
+          const percent = (event.loaded / event.total) * 100;
+          progressBar.style.width = percent + "%";
+        }
+      };
+
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          alert("✅ Upload complete.");
+          progressBar.style.width = "100%";
+          loadFiles();
+        } else {
+          alert("❌ Upload failed.");
+        }
+        progressContainer.style.display = "none";
+      };
+
+      xhr.send(JSON.stringify({ pdf_path: selectedFile, markdown: streamedMarkdown }));
+    }
+
+    function clearOutput() {
+      document.getElementById("streamed-output").innerText = "Waiting to process...";
+      streamedMarkdown = "";
+    }
+
+    loadFiles();
+    loadPrompts();
+  </script>
+</body>
+</html>
